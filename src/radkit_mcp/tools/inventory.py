@@ -50,8 +50,9 @@ async def get_device_inventory_names(service_serial: Optional[str] = None) -> st
         return str({device.name for device in inventory_values})
 
     except Exception as ex:
-        error_msg = f"⚠️ Error fetching device inventory: {str(ex)}"
-        raise Exception(error_msg)
+        raise Exception(
+            f"Error fetching device inventory: {ex}"
+        ) from ex
 
 
 async def get_device_attributes(
@@ -137,5 +138,6 @@ async def get_device_attributes(
         # Re-raise ValueError for device not found
         raise ve
     except Exception as ex:
-        error_msg = f"⚠️ Error fetching device attributes for {target_device}: {str(ex)}"
-        raise Exception(error_msg)
+        raise Exception(
+            f"Error fetching device attributes for '{target_device}': {ex}"
+        ) from ex
