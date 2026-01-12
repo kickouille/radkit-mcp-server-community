@@ -130,56 +130,66 @@ def initialize_radkit_client(client: Client) -> None:
         raise ValueError("Environment variable RADKIT_DEFAULT_SERVICE_SERIAL (or RADKIT_SERVICE_CODE) is required")
 
     # Authenticate based on mode
-    if auth_mode == "env_vars":
-        # Mode 1: Base64 environment variables (container deployment)
-        print("Loading certificate credentials from environment variables...")
-        _cert_credentials = load_certificates_from_env()
+    try:
+        if auth_mode == "env_vars":
+            # Mode 1: Base64 environment variables (container deployment)
+            print("Loading certificate credentials from environment variables...")
+            _cert_credentials = load_certificates_from_env()
 
-        print(f"Authenticating as {identity} (base64 env vars)...")
-        client.certificate_login(
-            identity=identity,
-            ca_path=_cert_credentials.ca_path,
-            cert_path=_cert_credentials.cert_path,
-            key_path=_cert_credentials.key_path,
-            private_key_password=_cert_credentials.password
-        )
+            print(f"Authenticating as {identity} (base64 env vars)...")
+            client.certificate_login(
+                identity=identity,
+                ca_path=_cert_credentials.ca_path,
+                cert_path=_cert_credentials.cert_path,
+                key_path=_cert_credentials.key_path,
+                private_key_password=_cert_credentials.password
+            )
 
-    elif auth_mode == "local_certs":
-        # Mode 2: Local certificate directory (local development)
-        print(f"Loading certificates from ~/.radkit/identities/...")
+        elif auth_mode == "local_certs":
+            # Mode 2: Local certificate directory (local development)
+            print(f"Loading certificates from ~/.radkit/identities/...")
 
-        domain = "prod.radkit-cloud.cisco.com"
-        cert_dir = Path.home() / ".radkit" / "identities" / domain / identity
+            domain = "prod.radkit-cloud.cisco.com"
+            cert_dir = Path.home() / ".radkit" / "identities" / domain / identity
 
-        # Get password from settings
-        password_b64 = settings.radkit_key_password
-        if not password_b64:
-            raise ValueError("Environment variable RADKIT_KEY_PASSWORD_B64 (or RADKIT_CLIENT_PRIVATE_KEY_PASSWORD_BASE64) is required for local cert auth")
+            # Get password from settings
+            password_b64 = settings.radkit_key_password
+            if not password_b64:
+                raise ValueError("Environment variable RADKIT_KEY_PASSWORD_B64 (or RADKIT_CLIENT_PRIVATE_KEY_PASSWORD_BASE64) is required for local cert auth")
 
-        import base64
-        password = base64.b64decode(password_b64).decode("utf-8")
+            import base64
+            password = base64.b64decode(password_b64).decode("utf-8")
 
-        # Load from local files
-        _cert_credentials = load_certificates_from_files(
-            cert_path=str(cert_dir / "certificate.pem"),
-            key_path=str(cert_dir / "private_key_encrypted.pem"),
-            ca_path=str(cert_dir / "chain.pem"),
-            password=password
-        )
+            # Load from local files
+            _cert_credentials = load_certificates_from_files(
+                cert_path=str(cert_dir / "certificate.pem"),
+                key_path=str(cert_dir / "private_key_encrypted.pem"),
+                ca_path=str(cert_dir / "chain.pem"),
+                password=password
+            )
 
-        print(f"Authenticating as {identity} (local certs)...")
-        client.certificate_login(
-            identity=identity,
-            ca_path=_cert_credentials.ca_path,
-            cert_path=_cert_credentials.cert_path,
-            key_path=_cert_credentials.key_path,
-            private_key_password=_cert_credentials.password
-        )
+            print(f"Authenticating as {identity} (local certs)...")
+            client.certificate_login(
+                identity=identity,
+                ca_path=_cert_credentials.ca_path,
+                cert_path=_cert_credentials.cert_path,
+                key_path=_cert_credentials.key_path,
+                private_key_password=_cert_credentials.password
+            )
 
-    else:  # username_login
-        # Mode 3: Certificate login with username (backward compatibility)
-        print(f"Authenticating as {identity} (certificate login)...")
-        client.certificate_login(identity)
+        else:  # username_login
+            # Mode 3: Certificate login with username (backward compatibility)
+            print(f"Authenticating as {identity} (certificate login)...")
+            client.certificate_login(identity)
+
+    except ValueError:
+        # Re-raise ValueError as-is (missing env vars, etc.)
+        raise
+    except Exception as e:
+        # Wrap authentication errors with context
+        raise Exception(
+            f"RADKit authentication failed for identity '{identity}': {e}"
+        ) from e
 
     # Store client reference
     _radkit_client = client

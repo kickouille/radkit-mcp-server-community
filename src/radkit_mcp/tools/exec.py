@@ -133,8 +133,48 @@ async def radkit_exec_command(
 
             # Check if execution was successful
             if device_result.status.value != "SUCCESS":
-                # Get status message if available
-                status_msg = getattr(device_result, "status_message", "Unknown error")
+                # Collect error details from command-level results
+                # The device_result may not have .errors directly, but individual
+                # command results (SingleExecResponse) do have .errors attribute
+                all_errors = []
+
+                # First try device-level errors
+                device_errors = getattr(device_result, "errors", None)
+                if device_errors:
+                    if isinstance(device_errors, list):
+                        all_errors.extend(str(e) for e in device_errors)
+                    else:
+                        all_errors.append(str(device_errors))
+
+                # Then collect errors from each command result
+                try:
+                    for cmd in device_result:
+                        cmd_result = device_result[cmd]
+                        cmd_errors = getattr(cmd_result, "errors", None)
+                        if cmd_errors:
+                            if isinstance(cmd_errors, list):
+                                all_errors.extend(str(e) for e in cmd_errors)
+                            else:
+                                all_errors.append(str(cmd_errors))
+                        elif cmd_result.status.value != "SUCCESS":
+                            # Try accessing .data which raises ExecError
+                            try:
+                                _ = cmd_result.data
+                            except Exception as cmd_err:
+                                all_errors.append(str(cmd_err))
+                except Exception:
+                    pass  # If iteration fails, use what we have
+
+                if all_errors:
+                    status_msg = "; ".join(all_errors)
+                else:
+                    # Final fallback
+                    status_msg = f"Status: {device_result.status.value}"
+                    try:
+                        _ = device_result.data
+                    except Exception as data_err:
+                        status_msg = str(data_err)
+
                 raise Exception(
                     f"Command execution failed on {device_name}: {status_msg}"
                 )
@@ -144,36 +184,60 @@ async def radkit_exec_command(
             for cmd in device_result:
                 cmd_result = device_result[cmd]
 
-                # Get output and handle line truncation
-                output = cmd_result.data
+                # Check individual command status and extract error if failed
+                cmd_status = cmd_result.status.value
                 truncated = False
                 total_lines = 0
+                error_msg = None
 
-                if max_lines > 0:
-                    lines = output.splitlines(keepends=True)
-                    total_lines = len(lines)
+                if cmd_status != "SUCCESS":
+                    # Try to get error details for this specific command
+                    cmd_errors = getattr(cmd_result, "errors", None)
+                    if cmd_errors:
+                        if isinstance(cmd_errors, list):
+                            error_msg = "; ".join(str(e) for e in cmd_errors)
+                        else:
+                            error_msg = str(cmd_errors)
+                    else:
+                        # Try accessing .data which may raise ExecError
+                        try:
+                            _ = cmd_result.data
+                            error_msg = f"Command failed with status: {cmd_status}"
+                        except Exception as cmd_err:
+                            error_msg = str(cmd_err)
+                    output = error_msg
+                else:
+                    # Get output and handle line truncation
+                    output = cmd_result.data
 
-                    if total_lines > max_lines:
-                        # Keep first max_lines
-                        truncated_output = ''.join(lines[:max_lines])
-                        truncated_lines = total_lines - max_lines
+                    if max_lines > 0:
+                        lines = output.splitlines(keepends=True)
+                        total_lines = len(lines)
 
-                        # Add truncation notice
-                        truncation_note = f"\n\n[OUTPUT TRUNCATED: {truncated_lines} lines omitted, showing first {max_lines} of {total_lines} lines]\n"
-                        output = truncated_output + truncation_note
-                        truncated = True
+                        if total_lines > max_lines:
+                            # Keep first max_lines
+                            truncated_output = ''.join(lines[:max_lines])
+                            truncated_lines = total_lines - max_lines
+
+                            # Add truncation notice
+                            truncation_note = f"\n\n[OUTPUT TRUNCATED: {truncated_lines} lines omitted, showing first {max_lines} of {total_lines} lines]\n"
+                            output = truncated_output + truncation_note
+                            truncated = True
 
                 result_entry = {
                     "device_name": device_name,
                     "command": cmd,
                     "output": output,
-                    "status": cmd_result.status.value,
+                    "status": cmd_status,
                     "truncated": truncated
                 }
 
                 if truncated:
                     result_entry["total_lines"] = total_lines
                     result_entry["displayed_lines"] = max_lines
+
+                if error_msg:
+                    result_entry["error"] = error_msg
 
                 results.append(result_entry)
 
