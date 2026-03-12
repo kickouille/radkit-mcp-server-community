@@ -21,9 +21,9 @@ classifiers = [
 ]
 
 dependencies = [
-    "cisco-radkit-client==1.9.0",
-    "cisco-radkit-common==1.9.0",
-    "cisco-radkit-service==1.9.0",
+    "cisco-radkit-client>=1.9.0",
+    "cisco-radkit-common>=1.9.0",
+    "cisco-radkit-service>=1.9.0",
     "fastmcp==2.13.1",
     "python-dotenv>=1.0.0",
     "pydantic-settings>=2.0.0",
